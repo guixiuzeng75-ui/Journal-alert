@@ -2,7 +2,7 @@
   "project": {
     "name": "护理科研文献日报",
     "timezone": "Asia/Shanghai"
-  }，
+  },
 
   "window": {
     "days": 3,
@@ -199,7 +199,7 @@
     "enabled": false,
     "skip_when_empty": true,
     "max_items": 10,
-    "max_chars": 5000,
+    "max_chars": 1800,
     "channels": {
       "serverchan": {
         "enabled": false,
