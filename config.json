@@ -2,7 +2,7 @@
   "project": {
     "name": "护理科研文献日报",
     "timezone": "Asia/Shanghai"
-  },
+  }，
 
   "window": {
     "days": 3,
