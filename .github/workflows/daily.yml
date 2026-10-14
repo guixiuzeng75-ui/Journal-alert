@@ -1,26 +1,28 @@
 name: journal-alert daily
 
-# 07:30 Asia/Shanghai == 23:30 UTC (previous day). GitHub's cron is always UTC.
-# Scheduled runs can be delayed by a few minutes at peak times - harmless here.
+# 07:30 Asia/Shanghai == 23:30 UTC (previous day).
+# GitHub cron always uses UTC.
 on:
   schedule:
     - cron: "30 23 * * *"
+
   workflow_dispatch:
     inputs:
       days:
         description: "覆盖时间窗（天）。留空 = 用 config.json 的自适应窗口"
         required: false
         default: ""
+
       sources:
         description: "只跑指定数据源，逗号分隔（如 openalex,crossref）。留空 = 全部"
         required: false
         default: ""
 
-# Needed so the job can commit the dedupe ledger and the daily report back.
+# Allow the workflow to commit reports and deduplication state back to the repo.
 permissions:
   contents: write
 
-# Never let two runs overlap; queue instead of cancelling.
+# Avoid overlapping runs.
 concurrency:
   group: journal-alert
   cancel-in-progress: false
@@ -31,27 +33,28 @@ jobs:
     timeout-minutes: 30
 
     env:
-      # Without this the container is UTC and run.py would name the report with
-      # yesterday's date (23:30 UTC is already "tomorrow" in Beijing).
+      # Use Beijing time for report date and logs.
       TZ: Asia/Shanghai
-      # Push keys come from repo Secrets -> Settings -> Secrets and variables -> Actions.
-      # Missing secrets expand to an empty string, and an empty key just disables
-      # that channel, so it is safe to leave any of these undefined.
-      JALERT_SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
-      JALERT_PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-      JALERT_BARK_KEY: ${{ secrets.BARK_KEY }}
-      # Optional: a real contact address gets OpenAlex/Crossref "polite pool" priority.
-      JALERT_MAILTO: ${{ vars.JALERT_MAILTO }}
+
+      # QQ email settings from GitHub Secrets.
+      JALERT_EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+      JALERT_EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      JALERT_EMAIL_TO: ${{ secrets.EMAIL_TO }}
+
+      # Contact email for OpenAlex / Crossref polite pool.
+      JALERT_MAILTO: ${{ secrets.EMAIL_USERNAME }}
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # The pipeline is standard-library only, so there is nothing to pip install.
-      # Diagnostic only: a transient probe timeout must not fail the whole job.
+      # Diagnostic only.
+      # Temporary network failures should not stop the real daily run.
       - name: Environment self-check
         continue-on-error: true
         run: python run.py --doctor
@@ -62,23 +65,31 @@ jobs:
           EXTRA_SOURCES: ${{ inputs.sources }}
         run: |
           set -eu
+
           ARGS="--once"
-          if [ -n "${EXTRA_DAYS}" ]; then ARGS="$ARGS --days ${EXTRA_DAYS}"; fi
-          if [ -n "${EXTRA_SOURCES}" ]; then ARGS="$ARGS --sources ${EXTRA_SOURCES}"; fi
+
+          if [ -n "${EXTRA_DAYS}" ]; then
+            ARGS="$ARGS --days ${EXTRA_DAYS}"
+          fi
+
+          if [ -n "${EXTRA_SOURCES}" ]; then
+            ARGS="$ARGS --sources ${EXTRA_SOURCES}"
+          fi
+
           echo "python run.py ${ARGS}"
           python run.py ${ARGS}
 
-      # The dedupe ledger (state/seen.sqlite) and reports/*.md are the only
-      # things that must survive between runs, so they are committed back.
-      # NOTE: this uses the automatic GITHUB_TOKEN, and pushes made with it do
-      # not trigger workflows - so there is no self-triggering loop.
+      # Save reports and deduplication state back to GitHub.
       - name: Commit state and report back
         if: always()
         run: |
           set -eu
-          git config user.name  "github-actions[bot]"
+
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add -A
+
           if git diff --cached --quiet; then
             echo "nothing changed"
           else
@@ -86,8 +97,7 @@ jobs:
             git push
           fi
 
-      # Logs and per-day snapshots are diagnostics, not history: keep them as
-      # artifacts (90 days) instead of growing the repository forever.
+      # Keep logs and daily snapshots for diagnostics.
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -99,11 +109,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
 
-      # Render the day's report in the Actions run page itself.
+      # Show today's report on the GitHub Actions run page.
       - name: Job summary
         if: always()
         run: |
           report="reports/$(date +%F).md"
+
           if [ -f "$report" ]; then
             cat "$report" >> "$GITHUB_STEP_SUMMARY"
           else
