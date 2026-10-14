@@ -23,6 +23,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jalert import push as push_module  # noqa: E402
+from jalert.email_push import dispatch_email  # noqa: E402
 from jalert.cards import parse_report, write_cards  # noqa: E402
 from jalert.config import describe_secret_sources, load_config  # noqa: E402
 from jalert.fetch import collect_items, http_request, make_uid  # noqa: E402
@@ -692,6 +693,46 @@ def run(args: argparse.Namespace) -> int:
                 )
 
         pushed = 0
+                # --------------------------------------------------------------
+        # Email delivery
+        # --------------------------------------------------------------
+        emailed = 0
+
+        if not args.dry_run:
+            email_cfg = cfg.get("email", {})
+
+            if email_cfg.get("enabled", False):
+                if new_entries or not email_cfg.get("skip_when_empty", True):
+
+                    email_result = dispatch_email(
+                        day=day,
+                        cfg=cfg,
+                        entries=sort_entries(
+                            new_entries,
+                            tiers,
+                            day,
+                        ),
+                        fetched_total=len(items),
+                        matched_total=len(matched),
+                        log=log,
+                    )
+
+                    if email_result.get("ok"):
+                        emailed = 1
+
+                    log.info(
+                        "email result: %s",
+                        json.dumps(
+                            email_result,
+                            ensure_ascii=False,
+                        ),
+                    )
+
+                else:
+                    log.info(
+                        "no new items; email skipped "
+                        "(skip_when_empty=true)"
+                    )
         if not args.dry_run and not args.no_push and cfg.get("push", {}).get("enabled", False):
             push_cfg = cfg["push"]
             if new_entries or not push_cfg.get("skip_when_empty", True):
@@ -716,7 +757,7 @@ def run(args: argparse.Namespace) -> int:
                 fetched=len(items),
                 matched=len(matched),
                 new_items=len(new_entries),
-                pushed=pushed,
+                pushed=pushed + emailed,
                 report_path=str(report_path),
                 note=f"{len(failures)} source failure(s)",
             )
