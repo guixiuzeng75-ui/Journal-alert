@@ -218,18 +218,12 @@
     }
   },
 
-  "ai_summary": {
-    "enabled": true,
-    "model": "gpt-6-luna",
-    "max_items": 20
-  },
-
   "email": {
     "enabled": true,
     "skip_when_empty": true,
     "max_items": 20,
     "subject_prefix": "护理科研文献日报",
-    "smtp_host": "smtp.gmail.com",
+    "smtp_host": "smtp.qq.com",
     "smtp_port": 465,
     "use_ssl": true
   },
